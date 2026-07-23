@@ -62,4 +62,14 @@ function param = robot_parameters()
     % but also make the differential equation stiffer.
     param.v_s = 0.05;
 
+    %% Surface contact parameters
+    % Floor height [m]
+    param.z_floor = -0.01;
+    
+    % Normal contact stiffness [N/m]
+    param.k_contact = 3000;
+    
+    % Normal contact damping [N*s/m]
+    param.d_contact = 40;
+
 end
