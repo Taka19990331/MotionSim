@@ -1,20 +1,22 @@
 function [mid_world, ee_world] = forward_kinematics(q1, q2, q3, l)
 
-    rho_mid = l*cos(q1);
-    z_mid   = l*sin(q1);
+    % Position in the local X-Z plane
+    x_mid_local = l*cos(q1);
+    z_mid_local = l*sin(q1);
 
-    rho_ee = rho_mid + l*cos(q2);
-    z_ee   = z_mid   + l*sin(q2);
+    x_ee_local = x_mid_local + l*cos(q2);
+    z_ee_local = z_mid_local + l*sin(q2);
 
+    % Rotate the local X-Z plane about the world Z-axis
     mid_world = [
-        rho_mid*cos(q3);
-        rho_mid*sin(q3);
-        z_mid
+        x_mid_local*cos(q3);
+        x_mid_local*sin(q3);
+        z_mid_local
     ];
 
     ee_world = [
-        rho_ee*cos(q3);
-        rho_ee*sin(q3);
-        z_ee
+        x_ee_local*cos(q3);
+        x_ee_local*sin(q3);
+        z_ee_local
     ];
 end
