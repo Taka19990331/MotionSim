@@ -1,7 +1,7 @@
-function J = jacobian_2link(q1, q2, l)
+function J = jacobian_2link(q1, q2, l1, l2)
 
     J = [
-        -l*sin(q1), -l*sin(q2);
-         l*cos(q1),  l*cos(q2)
+        -l1*sin(q1), -l2*sin(q2);
+         l1*cos(q1),  l2*cos(q2)
     ];
 end
