@@ -1,6 +1,7 @@
-function [dx, detail] = robot_model_3d(~, x, param)
+function [dx, detail] = robot_model_3d(t, x, param)
 %ROBOT_MODEL_3D
-% Complete 3-DOF robot model with root yaw.
+% Complete 3-DOF robot model with Cartesian KD control
+% and an external sinusoidal force.
 %
 % Joint definition:
 %   q1 : Absolute angle of link 1 in the radial-Z plane
@@ -8,6 +9,7 @@ function [dx, detail] = robot_model_3d(~, x, param)
 %   q3 : Root yaw angle about the world Z axis
 %
 % State:
+%
 %   x = [
 %       q1;
 %       q2;
@@ -15,7 +17,27 @@ function [dx, detail] = robot_model_3d(~, x, param)
 %       dq1;
 %       dq2;
 %       dq3
-%   ];
+%   ]
+%
+% Cartesian control law:
+%
+%   F_control
+%       = K * (p_ref - p)
+%       - D * dp
+%
+%   tau_control
+%       = J_ee.' * F_control
+%
+% External Cartesian force:
+%
+%   F_external = [
+%       0;
+%       0;
+%       F_external_z
+%   ]
+%
+%   tau_external
+%       = J_ee.' * F_external
 %
 % Equation of motion:
 %
@@ -23,9 +45,15 @@ function [dx, detail] = robot_model_3d(~, x, param)
 %   + c(q,dq)
 %   + G(q)
 %   + tau_fric(dq)
-%   = tau_command + tau_contact
+%   =
+%       tau_control
+%       + tau_external
+%       + tau_contact
 %
 % Input:
+%   t:
+%       Simulation time [s]
+%
 %   x:
 %       6x1 state vector
 %
@@ -37,8 +65,9 @@ function [dx, detail] = robot_model_3d(~, x, param)
 %       6x1 state-derivative vector
 %
 %   detail:
-%       Structure containing dynamics, kinematics,
-%       contact, friction, and energy values.
+%       Structure containing dynamics, control,
+%       external-force, contact, friction,
+%       kinematics, and energy values.
 
     %% Input check
 
@@ -50,15 +79,19 @@ function [dx, detail] = robot_model_3d(~, x, param)
 
     %% State
 
-    q = x(1:3);
-    dq = x(4:6);
+    q = ...
+        x(1:3);
+
+    dq = ...
+        x(4:6);
 
     %% Kinematics
 
-    kin = robot_kinematics_3d( ...
-        q, ...
-        dq, ...
-        param);
+    kin = ...
+        robot_kinematics_3d( ...
+            q, ...
+            dq, ...
+            param);
 
     %% Rigid-body dynamics
 
@@ -75,27 +108,65 @@ function [dx, detail] = robot_model_3d(~, x, param)
             dq, ...
             param);
 
-    %% Surface contact
+    %% Cartesian KD control
 
-    [F_contact, tau_contact, contact_detail] = ...
-        surface_contact_3d( ...
+    [F_control, tau_control, control_detail] = ...
+        cartesian_kd_control_3d( ...
             kin, ...
             param);
 
+    %% External sinusoidal force
+
+    [F_external, tau_external, external_force_detail] = ...
+        external_sinusoidal_force_3d( ...
+            t, ...
+            kin, ...
+            param);
+
+    %% Surface contact
+
+    contact_enabled = true;
+
+    if isfield(param, 'contact') ...
+            && isfield(param.contact, 'enabled')
+
+        contact_enabled = ...
+            param.contact.enabled;
+
+    end
+
+    if contact_enabled
+
+        [F_contact, tau_contact, contact_detail] = ...
+            surface_contact_3d( ...
+                kin, ...
+                param);
+
+    else
+
+        [F_contact, tau_contact, contact_detail] = ...
+            zero_contact_3d(kin);
+
+    end
+
     %% Command torque
     %
-    % No active controller is applied yet.
+    % tau_command contains only the controller-generated torque.
+    % The external-force torque is stored separately.
 
-    tau_command = zeros(3, 1);
+    tau_command = ...
+        tau_control;
 
     %% Forward dynamics
 
-    ddq = M \ ( ...
-        tau_command ...
-        + tau_contact ...
-        - c ...
-        - G ...
-        - tau_fric);
+    ddq = ...
+        M \ ( ...
+            tau_control ...
+            + tau_external ...
+            + tau_contact ...
+            - c ...
+            - G ...
+            - tau_fric);
 
     %% State derivative
 
@@ -126,20 +197,355 @@ function [dx, detail] = robot_model_3d(~, x, param)
         detail.c = c;
         detail.G = G;
 
-        detail.tau_command = tau_command;
-        detail.tau_fric = tau_fric;
-        detail.tau_contact = tau_contact;
+        detail.tau_command = ...
+            tau_command;
 
-        detail.kinematics = kin;
+        detail.tau_control = ...
+            tau_control;
 
-        detail.contact_force = F_contact;
-        detail.contact = contact_detail;
+        detail.tau_external = ...
+            tau_external;
 
-        detail.dynamics = dynamics_detail;
-        detail.friction = friction_detail;
-        detail.energy = energy;
+        detail.tau_fric = ...
+            tau_fric;
+
+        detail.tau_contact = ...
+            tau_contact;
+
+        detail.control_force = ...
+            F_control;
+
+        detail.external_force = ...
+            F_external;
+
+        detail.kinematics = ...
+            kin;
+
+        detail.control = ...
+            control_detail;
+
+        detail.external = ...
+            external_force_detail;
+
+        detail.contact_force = ...
+            F_contact;
+
+        detail.contact = ...
+            contact_detail;
+
+        detail.dynamics = ...
+            dynamics_detail;
+
+        detail.friction = ...
+            friction_detail;
+
+        detail.energy = ...
+            energy;
 
     end
+
+end
+
+
+function [F_control, tau_control, detail] = ...
+    cartesian_kd_control_3d(kin, param)
+%CARTESIAN_KD_CONTROL_3D
+% Cartesian end-effector KD control in world XYZ coordinates.
+%
+% Control law:
+%
+%   F_control
+%       = K * (p_ref - p)
+%       - D * dp
+%
+% Joint torque:
+%
+%   tau_control
+%       = J_ee.' * F_control
+
+    %% Default output
+
+    F_control = ...
+        zeros(3, 1);
+
+    tau_control = ...
+        zeros(3, 1);
+
+    position_reference = ...
+        zeros(3, 1);
+
+    position_error = ...
+        zeros(3, 1);
+
+    proportional_force = ...
+        zeros(3, 1);
+
+    damping_force = ...
+        zeros(3, 1);
+
+    %% Control state
+
+    control_enabled = false;
+
+    if isfield(param, 'control') ...
+            && isfield(param.control, 'enabled')
+
+        control_enabled = ...
+            param.control.enabled;
+
+    end
+
+    %% Cartesian KD control
+
+    if control_enabled
+
+        if ~isfield(param.control, 'position_reference')
+            error( ...
+                ['param.control.position_reference ', ...
+                 'has not been defined.']);
+        end
+
+        position_reference = ...
+            param.control.position_reference(:);
+
+        if numel(position_reference) ~= 3
+            error( ...
+                ['param.control.position_reference ', ...
+                 'must contain X, Y, and Z.']);
+        end
+
+        if any(~isfinite(position_reference))
+            error( ...
+                ['param.control.position_reference contains ', ...
+                 'NaN or Inf. Set it from the initial ', ...
+                 'end-effector position in main_MCGFC_3d.']);
+        end
+
+        if ~isequal(size(param.control.K), [3, 3])
+            error('param.control.K must be a 3x3 matrix.');
+        end
+
+        if ~isequal(size(param.control.D), [3, 3])
+            error('param.control.D must be a 3x3 matrix.');
+        end
+
+        position_error = ...
+            position_reference ...
+            - kin.ee.position;
+
+        proportional_force = ...
+            param.control.K ...
+            * position_error;
+
+        damping_force = ...
+            -param.control.D ...
+            * kin.ee.velocity;
+
+        F_control = ...
+            proportional_force ...
+            + damping_force;
+
+        tau_control = ...
+            kin.ee.J.' ...
+            * F_control;
+
+    end
+
+    %% Detail output
+
+    detail.enabled = ...
+        control_enabled;
+
+    detail.position_reference = ...
+        position_reference;
+
+    detail.position = ...
+        kin.ee.position;
+
+    detail.velocity = ...
+        kin.ee.velocity;
+
+    detail.position_error = ...
+        position_error;
+
+    detail.proportional_force = ...
+        proportional_force;
+
+    detail.damping_force = ...
+        damping_force;
+
+    detail.force = ...
+        F_control;
+
+    detail.torque = ...
+        tau_control;
+
+end
+
+
+function [F_external, tau_external, detail] = ...
+    external_sinusoidal_force_3d(t, kin, param)
+%EXTERNAL_SINUSOIDAL_FORCE_3D
+% Apply a sinusoidal external force to the end effector
+% along the world-Z direction.
+%
+%   Fz = A * sin(2*pi*f*(t - start_time) + phase)
+%
+% The force is zero before start_time.
+
+    %% Default output
+
+    F_external = ...
+        zeros(3, 1);
+
+    tau_external = ...
+        zeros(3, 1);
+
+    Fz = 0;
+
+    elapsed_time = 0;
+
+    %% External-force state
+
+    external_force_enabled = false;
+
+    if isfield(param, 'external_force') ...
+            && isfield(param.external_force, 'enabled')
+
+        external_force_enabled = ...
+            param.external_force.enabled;
+
+    end
+
+    %% Sinusoidal external force
+
+    if external_force_enabled
+
+        start_time = ...
+            param.external_force.start_time;
+
+        if t >= start_time
+
+            elapsed_time = ...
+                t ...
+                - start_time;
+
+            amplitude = ...
+                param.external_force.amplitude;
+
+            frequency = ...
+                param.external_force.frequency;
+
+            phase = ...
+                param.external_force.phase;
+
+            Fz = ...
+                amplitude ...
+                * sin( ...
+                    2 ...
+                    * pi ...
+                    * frequency ...
+                    * elapsed_time ...
+                    + phase);
+
+        end
+
+        F_external = [
+            0;
+            0;
+            Fz
+        ];
+
+        tau_external = ...
+            kin.ee.J.' ...
+            * F_external;
+
+    end
+
+    %% Detail output
+
+    detail.enabled = ...
+        external_force_enabled;
+
+    detail.elapsed_time = ...
+        elapsed_time;
+
+    detail.force_z = ...
+        Fz;
+
+    detail.force = ...
+        F_external;
+
+    detail.torque = ...
+        tau_external;
+
+end
+
+
+function [F_contact, tau_contact, detail] = ...
+    zero_contact_3d(kin)
+%ZERO_CONTACT_3D
+% Return zero contact forces and torques while preserving
+% the contact-detail structure expected by the evaluation code.
+
+    %% Zero forces and torques
+
+    zero_force = ...
+        zeros(3, 1);
+
+    zero_torque = ...
+        zeros(3, 1);
+
+    F_contact.joint = ...
+        zero_force;
+
+    F_contact.ee = ...
+        zero_force;
+
+    F_contact.total = ...
+        zero_force;
+
+    tau_contact = ...
+        zero_torque;
+
+    %% Second-joint contact detail
+
+    detail.joint.position = ...
+        kin.joint.position;
+
+    detail.joint.velocity = ...
+        kin.joint.velocity;
+
+    detail.joint.penetration = 0;
+    detail.joint.penetration_velocity = 0;
+    detail.joint.F_spring = 0;
+    detail.joint.F_damper = 0;
+    detail.joint.is_contact = false;
+
+    %% End-effector contact detail
+
+    detail.ee.position = ...
+        kin.ee.position;
+
+    detail.ee.velocity = ...
+        kin.ee.velocity;
+
+    detail.ee.penetration = 0;
+    detail.ee.penetration_velocity = 0;
+    detail.ee.F_spring = 0;
+    detail.ee.F_damper = 0;
+    detail.ee.is_contact = false;
+
+    %% Contact torque detail
+
+    detail.tau_joint = ...
+        zero_torque;
+
+    detail.tau_ee = ...
+        zero_torque;
+
+    detail.tau_total = ...
+        zero_torque;
 
 end
 

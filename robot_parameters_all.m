@@ -1,11 +1,19 @@
 function param = robot_parameters_all()
-%ROBOT_PARAMETERS
+%ROBOT_PARAMETERS_ALL
 % Common robot parameters for both 2-DOF and 3-DOF simulations.
 %
 % Joint definition:
 %   q1 : Absolute angle of link 1 in the local radial-Z plane
 %   q2 : Absolute angle of link 2 in the local radial-Z plane
 %   q3 : Root yaw angle about the world Z axis
+%
+% Cartesian control-coordinate definition:
+%
+%   p = [
+%       X;
+%       Y;
+%       Z
+%   ]
 %
 % The 2-DOF model uses q1 and q2.
 % The 3-DOF model uses q1, q2, and q3.
@@ -40,8 +48,11 @@ function param = robot_parameters_all()
     % Temporary uniform-link approximation.
     % Replace these values with CAD-derived COM positions later.
 
-    param.r1 = param.l1 / 2;
-    param.r2 = param.l2 / 2;
+    param.r1 = ...
+        param.l1 / 2;
+
+    param.r2 = ...
+        param.l2 / 2;
 
     %% Link inertia about each center of mass [kg*m^2]
     %
@@ -65,8 +76,8 @@ function param = robot_parameters_all()
     %% Root-yaw structural inertia [kg*m^2]
     %
     % This value represents inertia belonging directly to the root
-    % yaw assembly, excluding the configuration-dependent inertia of
-    % links 1 and 2.
+    % yaw assembly, excluding the configuration-dependent inertia
+    % of links 1 and 2.
     %
     % Replace this temporary value with a CAD-derived value.
 
@@ -103,9 +114,14 @@ function param = robot_parameters_all()
 
     % Named values retained for readability and compatibility.
 
-    param.JM1_ref = param.JM_ref(1);
-    param.JM2_ref = param.JM_ref(2);
-    param.JM3_ref = param.JM_ref(3);
+    param.JM1_ref = ...
+        param.JM_ref(1);
+
+    param.JM2_ref = ...
+        param.JM_ref(2);
+
+    param.JM3_ref = ...
+        param.JM_ref(3);
 
     %% Gravity [m/s^2]
 
@@ -142,15 +158,132 @@ function param = robot_parameters_all()
 
     % Named values retained for readability and compatibility.
 
-    param.B1 = param.B(1);
-    param.B2 = param.B(2);
-    param.B3 = param.B(3);
+    param.B1 = ...
+        param.B(1);
 
-    param.tau_c1 = param.tau_c(1);
-    param.tau_c2 = param.tau_c(2);
-    param.tau_c3 = param.tau_c(3);
+    param.B2 = ...
+        param.B(2);
+
+    param.B3 = ...
+        param.B(3);
+
+    param.tau_c1 = ...
+        param.tau_c(1);
+
+    param.tau_c2 = ...
+        param.tau_c(2);
+
+    param.tau_c3 = ...
+        param.tau_c(3);
+
+    %% Cartesian task-space KD control
+    %
+    % Cartesian coordinate order:
+    %
+    %   p = [
+    %       X;
+    %       Y;
+    %       Z
+    %   ]
+    %
+    % Control law:
+    %
+    %   F_control
+    %       = K * (p_ref - p)
+    %       - D * dp
+    %
+    % Joint torque:
+    %
+    %   tau_control
+    %       = J_ee.' * F_control
+    %
+    % X and Y are controlled relatively stiffly so that
+    % the end effector behaves approximately like it is
+    % constrained to a vertical slider.
+    %
+    % Z is intentionally softer so that its response to
+    % the sinusoidal external force can be observed.
+    %
+    % The Cartesian position reference is calculated from
+    % the initial posture in main_MCGFC_3d.
+
+    param.control.enabled = true;
+
+    % Cartesian stiffness matrix [N/m]
+    %
+    % Coordinate order:
+    %   X, Y, Z
+
+    param.control.K = diag([
+        1000;
+        1000;
+         200
+    ]);
+
+    % Cartesian damping matrix [N*s/m]
+    %
+    % Coordinate order:
+    %   X, Y, Z
+
+    param.control.D = diag([
+        60;
+        60;
+        25
+    ]);
+
+    % The reference position will be assigned in the main script
+    % after calculating the initial end-effector position.
+
+    param.control.position_reference = [
+        NaN;
+        NaN;
+        NaN
+    ];
+
+    %% External sinusoidal force
+    %
+    % External Cartesian force:
+    %
+    %   F_external = [
+    %       0;
+    %       0;
+    %       F_external_z
+    %   ]
+    %
+    % where:
+    %
+    %   F_external_z
+    %       = amplitude
+    %       * sin( ...
+    %           2*pi*frequency*(t - start_time) ...
+    %           + phase)
+    %
+    % The force is zero before start_time.
+
+    param.external_force.enabled = true;
+
+    % Force amplitude [N]
+
+    param.external_force.amplitude = 5.0;
+
+    % Force frequency [Hz]
+
+    param.external_force.frequency = 0.5;
+
+    % Initial phase [rad]
+
+    param.external_force.phase = 0;
+
+    % Time at which the sinusoidal force starts [s]
+
+    param.external_force.start_time = 0.0;
 
     %% Surface-contact parameters
+
+    % Contact is disabled during the present
+    % Cartesian KD-control test.
+
+    param.contact.enabled = false;
 
     % Horizontal floor height in world coordinates [m]
 
