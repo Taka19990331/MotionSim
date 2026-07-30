@@ -217,7 +217,7 @@ function param = robot_parameters_all()
     param.control.K = diag([
         1000;
         1000;
-         200
+         100
     ]);
 
     % Cartesian damping matrix [N*s/m]
@@ -228,7 +228,7 @@ function param = robot_parameters_all()
     param.control.D = diag([
         60;
         60;
-        25
+        10
     ]);
 
     % The reference position will be assigned in the main script

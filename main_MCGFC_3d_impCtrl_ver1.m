@@ -7,7 +7,7 @@ clc;
 %% Display settings
 
 show_animation = true;
-show_graphs = false;
+show_graphs = true;
 
 %% Robot parameters
 
@@ -800,7 +800,7 @@ function animate_robot_3d(result, param)
     ylabel('Y [m]');
     zlabel('Z [m]');
 
-    title('3-DOF robot with surface contact');
+    title('3-DOF robot');
 
     view(45, 25);
 
@@ -1120,7 +1120,7 @@ function plot_simulation_results_3d(result, param)
         'q_3', ...
         'Location', 'best');
 
-    title('Joint angles with surface contact');
+    title('Joint angles');
 
     %% Joint velocities
 
@@ -1142,7 +1142,7 @@ function plot_simulation_results_3d(result, param)
         'dq_3', ...
         'Location', 'best');
 
-    title('Joint velocities with surface contact');
+    title('Joint velocities');
 
     %% Joint accelerations
 
@@ -1164,7 +1164,7 @@ function plot_simulation_results_3d(result, param)
         'ddq_3', ...
         'Location', 'best');
 
-    title('Joint accelerations with surface contact');
+    title('Joint accelerations');
 
     %% Cartesian positions
 
