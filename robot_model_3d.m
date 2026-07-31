@@ -125,15 +125,8 @@ function [dx, detail] = robot_model_3d(t, x, param)
 
     %% Surface contact
 
-    contact_enabled = true;
-
-    if isfield(param, 'contact') ...
-            && isfield(param.contact, 'enabled')
-
-        contact_enabled = ...
-            param.contact.enabled;
-
-    end
+    contact_enabled = ...
+        param.contact.enabled;
 
     if contact_enabled
 
@@ -141,11 +134,6 @@ function [dx, detail] = robot_model_3d(t, x, param)
             surface_contact_3d( ...
                 kin, ...
                 param);
-
-    else
-
-        [F_contact, tau_contact, contact_detail] = ...
-            zero_contact_3d(kin);
 
     end
 
@@ -159,11 +147,19 @@ function [dx, detail] = robot_model_3d(t, x, param)
 
     %% Forward dynamics
 
+    applied_torque = ...
+        tau_control ...
+        + tau_external;
+
+    if contact_enabled
+        applied_torque = ...
+            applied_torque ...
+            + tau_contact;
+    end
+
     ddq = ...
         M \ ( ...
-            tau_control ...
-            + tau_external ...
-            + tau_contact ...
+            applied_torque ...
             - c ...
             - G ...
             - tau_fric);
@@ -209,9 +205,6 @@ function [dx, detail] = robot_model_3d(t, x, param)
         detail.tau_fric = ...
             tau_fric;
 
-        detail.tau_contact = ...
-            tau_contact;
-
         detail.control_force = ...
             F_control;
 
@@ -227,11 +220,16 @@ function [dx, detail] = robot_model_3d(t, x, param)
         detail.external = ...
             external_force_detail;
 
-        detail.contact_force = ...
-            F_contact;
+        if contact_enabled
+            detail.tau_contact = ...
+                tau_contact;
 
-        detail.contact = ...
-            contact_detail;
+            detail.contact_force = ...
+                F_contact;
+
+            detail.contact = ...
+                contact_detail;
+        end
 
         detail.dynamics = ...
             dynamics_detail;
@@ -478,74 +476,6 @@ function [F_external, tau_external, detail] = ...
 
     detail.torque = ...
         tau_external;
-
-end
-
-
-function [F_contact, tau_contact, detail] = ...
-    zero_contact_3d(kin)
-%ZERO_CONTACT_3D
-% Return zero contact forces and torques while preserving
-% the contact-detail structure expected by the evaluation code.
-
-    %% Zero forces and torques
-
-    zero_force = ...
-        zeros(3, 1);
-
-    zero_torque = ...
-        zeros(3, 1);
-
-    F_contact.joint = ...
-        zero_force;
-
-    F_contact.ee = ...
-        zero_force;
-
-    F_contact.total = ...
-        zero_force;
-
-    tau_contact = ...
-        zero_torque;
-
-    %% Second-joint contact detail
-
-    detail.joint.position = ...
-        kin.joint.position;
-
-    detail.joint.velocity = ...
-        kin.joint.velocity;
-
-    detail.joint.penetration = 0;
-    detail.joint.penetration_velocity = 0;
-    detail.joint.F_spring = 0;
-    detail.joint.F_damper = 0;
-    detail.joint.is_contact = false;
-
-    %% End-effector contact detail
-
-    detail.ee.position = ...
-        kin.ee.position;
-
-    detail.ee.velocity = ...
-        kin.ee.velocity;
-
-    detail.ee.penetration = 0;
-    detail.ee.penetration_velocity = 0;
-    detail.ee.F_spring = 0;
-    detail.ee.F_damper = 0;
-    detail.ee.is_contact = false;
-
-    %% Contact torque detail
-
-    detail.tau_joint = ...
-        zero_torque;
-
-    detail.tau_ee = ...
-        zero_torque;
-
-    detail.tau_total = ...
-        zero_torque;
 
 end
 

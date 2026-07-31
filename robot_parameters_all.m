@@ -215,9 +215,9 @@ function param = robot_parameters_all()
     %   X, Y, Z
 
     param.control.K = diag([
-        1000;
-        1000;
-         100
+        2000;
+        2000;
+         300
     ]);
 
     % Cartesian damping matrix [N*s/m]
@@ -226,9 +226,9 @@ function param = robot_parameters_all()
     %   X, Y, Z
 
     param.control.D = diag([
-        60;
-        60;
-        10
+        100;
+        100;
+        30
     ]);
 
     % The reference position will be assigned in the main script
@@ -264,7 +264,7 @@ function param = robot_parameters_all()
 
     % Force amplitude [N]
 
-    param.external_force.amplitude = 5.0;
+    param.external_force.amplitude = 50.0;
 
     % Force frequency [Hz]
 
